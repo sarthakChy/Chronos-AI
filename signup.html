@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chronos AI News - Sign Up</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar - copied from your index.html for consistency */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-500 to-purple-600 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full transform transition-all duration-300 hover:scale-[1.01]">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">
+            <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-700">Chronos AI News</span> Sign Up
+        </h1>
+
+        <form id="signup-form">
+            <div class="mb-4">
+                <label for="email" class="block text-gray-700 text-sm font-bold mb-2">
+                    Email:
+                </label>
+                <input type="email" id="email" placeholder="newuser@example.com" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 ease-in-out">
+            </div>
+
+            <div class="mb-6">
+                <label for="password" class="block text-gray-700 text-sm font-bold mb-2">
+                    Password:
+                </label>
+                <input type="password" id="password" placeholder="********" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 ease-in-out">
+                <p class="text-gray-500 text-xs italic">Password must be at least 6 characters long.</p>
+            </div>
+
+            <div class="flex flex-col items-center justify-between">
+                <button type="submit" id="signup-button"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 ease-in-out transform hover:scale-105 w-full mb-4">
+                    Sign Up
+                </button>
+                <a href="login.html" class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800">
+                    Already have an account? Login
+                </a>
+            </div>
+            <p id="auth-message" class="text-center text-sm mt-4 hidden"></p>
+        </form>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <script>
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBf4xXlZkIEuuo0zWUpKipt6m3C5ym4vqM",
+            authDomain: "chronos-news-agent.firebaseapp.com",
+            projectId: "chronos-news-agent",
+            storageBucket: "chronos-news-agent.firebasestorage.app",
+            messagingSenderId: "1084431424700",
+            appId: "1:1084431424700:web:91237ba80f180e2cbdc4b9",
+            measurementId: "G-MT1FZ6SGE6"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        // --- DOM Elements ---
+        const signupForm = document.getElementById('signup-form');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const signupButton = document.getElementById('signup-button');
+        const authMessage = document.getElementById('auth-message');
+
+        // --- Functions ---
+        function showMessage(message, isError = true) {
+            authMessage.textContent = message;
+            authMessage.classList.remove('hidden', 'text-red-600', 'text-green-600');
+            authMessage.classList.add(isError ? 'text-red-600' : 'text-green-600');
+            authMessage.classList.remove('hidden');
+        }
+
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            signupButton.disabled = true;
+            signupButton.textContent = 'Signing Up...';
+            authMessage.classList.add('hidden'); // Hide previous message
+
+            const email = emailInput.value;
+            const password = passwordInput.value;
+
+            if (password.length < 6) {
+                showMessage('Password must be at least 6 characters long.', true);
+                signupButton.disabled = false;
+                signupButton.textContent = 'Sign Up';
+                return;
+            }
+
+            try {
+                await auth.createUserWithEmailAndPassword(email, password);
+                showMessage('Account created successfully! Redirecting to login...', false);
+                // Redirect to the login page upon successful sign up
+                setTimeout(() => { // Add a slight delay for message to be read
+                    window.location.href = 'login.html';
+                }, 1500); // Redirect after 1.5 seconds
+            } catch (error) {
+                let errorMessage = error.message;
+                if (error.code === 'auth/email-already-in-use') {
+                    errorMessage = 'This email is already in use. Try logging in or use a different email.';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = 'Invalid email address format.';
+                } else if (error.code === 'auth/weak-password') {
+                    errorMessage = 'Password is too weak. Please choose a stronger password.';
+                }
+                showMessage(`Sign Up failed: ${errorMessage}`, true);
+            } finally {
+                signupButton.disabled = false;
+                signupButton.textContent = 'Sign Up';
+            }
+        });
+    </script>
+</body>
+</html>
