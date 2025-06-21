@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chronos AI News Preferences</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-500 to-purple-600 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-lg shadow-xl p-8 max-w-lg w-full transform transition-all duration-300 hover:scale-[1.01] relative">
+        <div class="absolute top-4 right-4 text-right text-sm">
+            <p id="user-info-display" class="text-gray-500 mb-1">Logged in as: <span id="user-email" class="font-mono text-gray-700 break-all"></span></p>
+            <button id="logout-button" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 text-xs">
+                Logout
+            </button>
+        </div>
+
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center pt-8"> <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-700">Chronos AI News</span> Preferences
+        </h1>
+        <p class="text-gray-600 text-center mb-6">
+            Select your news interests and preferred delivery time.
+        </p>
+
+        <div id="loading" class="text-center text-gray-500 mb-4">
+            Loading user preferences...
+        </div>
+
+        <form id="preferences-form" class="hidden">
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">
+                    Select Your Interests:
+                </label>
+                <div id="interests-container" class="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-60 overflow-y-auto pr-2 bg-gray-50 p-3 rounded-md border border-gray-200">
+                    </div>
+            </div>
+
+            <div class="mb-8">
+                <label for="delivery-time" class="block text-gray-700 text-sm font-bold mb-2">
+                    Preferred Delivery Hour:
+                </label>
+                <select id="delivery-time" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 ease-in-out bg-white">
+                    </select>
+            </div>
+
+            <div class="mb-8">
+                <label for="delivery-minute" class="block text-gray-700 text-sm font-bold mb-2">
+                    Preferred Delivery Minute:
+                </label>
+                <select id="delivery-minute" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 ease-in-out bg-white">
+                    </select>
+            </div>
+            <div class="flex items-center justify-between">
+                <button type="submit" id="save-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 ease-in-out transform hover:scale-105">
+                    Save Preferences
+                </button>
+                <div id="status-message" class="text-sm text-gray-600 ml-4"></div>
+            </div>
+        </form>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+    <script>
+    // --- Firebase Configuration ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyBf4xXlZkIEuuo0zWUpKipt6m3C5ym4vqM",
+        authDomain: "chronos-news-agent.firebaseapp.com",
+        projectId: "chronos-news-agent",
+        storageBucket: "chronos-news-agent.firebasestorage.app",
+        messagingSenderId: "1084431424700",
+        appId: "1:1084431424700:web:91237ba80f180e2cbdc4b9",
+        measurementId: "G-MT1FZ6SGE6"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    let currentUserId = null; // To store the authenticated user's ID
+
+    // --- DOM Elements ---
+    const loadingDiv = document.getElementById('loading');
+    const userInfoDisplay = document.getElementById('user-info-display');
+    const userEmailSpan = document.getElementById('user-email');
+    const logoutButton = document.getElementById('logout-button');
+    const preferencesForm = document.getElementById('preferences-form');
+    const interestsContainer = document.getElementById('interests-container');
+    const deliveryTimeSelect = document.getElementById('delivery-time');
+    const deliveryMinuteSelect = document.getElementById('delivery-minute');
+    const saveButton = document.getElementById('save-button');
+    const statusMessage = document.getElementById('status-message');
+
+    // --- Predefined Interests ---
+    const availableInterests = [
+        "Technology", "Science", "Business", "Politics", "Culture",
+        "Sports", "Health", "Environment", "World News", "Finance",
+        "Entertainment", "Startup", "AI", "Blockchain", "Space",
+        "Cybersecurity", "Gaming", "Automotive", "Education", "Travel"
+    ];
+
+    // --- Populate Interests and Time Slots ---
+    function populateFormOptions() {
+        // Populate Interests
+        interestsContainer.innerHTML = ''; // Clear existing
+        availableInterests.forEach(interest => {
+            const id = `interest-${interest.toLowerCase().replace(/\s/g, '-')}`;
+            const checkboxDiv = document.createElement('div');
+            checkboxDiv.className = 'flex items-center';
+            checkboxDiv.innerHTML = `
+                <input type="checkbox" id="${id}" name="interests" value="${interest}"
+                       class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                <label for="${id}" class="ml-2 text-sm text-gray-700 cursor-pointer">${interest}</label>
+            `;
+            interestsContainer.appendChild(checkboxDiv);
+        });
+
+        // Populate Delivery Hour (24-hour format in dropdown for saving, display in 12-hour)
+        deliveryTimeSelect.innerHTML = ''; // Clear existing
+        for (let i = 0; i < 24; i++) {
+            const option = document.createElement('option');
+            option.value = i; // Save 24-hour format as integer
+            let displayHour = i;
+            let ampm = 'AM';
+            if (displayHour === 0) {
+                displayHour = 12; // 00:00 is 12 AM
+            } else if (displayHour >= 12) {
+                ampm = 'PM';
+                if (displayHour > 12) {
+                    displayHour -= 12; // Convert 13:00 to 1:00 PM, etc.
+                }
+            }
+            option.textContent = `${String(displayHour).padStart(2, '0')}:00 ${ampm}`;
+            deliveryTimeSelect.appendChild(option);
+        }
+
+        // Populate Delivery Minute
+        deliveryMinuteSelect.innerHTML = ''; // Clear existing options
+        for (let i = 0; i < 60; i++) {
+            const option = document.createElement('option');
+            option.value = i; // Save minute as integer (0-59)
+            option.textContent = String(i).padStart(2, '0'); // Format as "00", "01", ..., "59"
+            deliveryMinuteSelect.appendChild(option);
+        }
+    }
+
+    // --- Load User Preferences from Firestore ---
+    async function loadUserPreferences(userId) {
+        loadingDiv.classList.remove('hidden'); // Show loading message
+        preferencesForm.classList.add('hidden'); // Hide form initially
+
+        try {
+            const userDocRef = db.collection('users').doc(userId);
+            const doc = await userDocRef.get();
+
+            if (doc.exists) {
+                const data = doc.data();
+                
+                if (data.interests && Array.isArray(data.interests)) {
+                    data.interests.forEach(interest => {
+                        const checkbox = document.querySelector(`input[name="interests"][value="${interest}"]`);
+                        if (checkbox) {
+                            checkbox.checked = true;
+                        }
+                    });
+                }
+                if (data.deliveryHour !== undefined) {
+                    deliveryTimeSelect.value = data.deliveryHour;
+                }
+                if (data.deliveryMinute !== undefined) {
+                    deliveryMinuteSelect.value = data.deliveryMinute;
+                }
+                showMessage('Preferences loaded successfully!', 'text-green-600');
+            } else {
+                showMessage('No saved preferences found. Please set them.', 'text-blue-600');
+            }
+        } catch (error) {
+            console.error("Error loading user preferences:", error);
+            showMessage('Error loading preferences. Please try again.', 'text-red-600');
+        } finally {
+            loadingDiv.classList.add('hidden'); // Hide loading message
+            preferencesForm.classList.remove('hidden'); // Show the form
+        }
+    }
+
+    // --- Save User Preferences Directly to Firestore ---
+    async function saveUserPreferences() {
+        saveButton.disabled = true;
+        saveButton.textContent = 'Saving...';
+        statusMessage.textContent = ''; // Clear previous message
+
+        try {
+            if (!auth.currentUser) {
+                throw new Error("User not authenticated. Please log in again.");
+            }
+            // Get the logged-in user's email directly from Firebase Auth
+            const loggedInUserEmail = auth.currentUser.email; 
+
+            // Get selected interests from checkboxes
+            const selectedInterests = Array.from(document.querySelectorAll('input[name="interests"]:checked'))
+                                            .map(checkbox => checkbox.value);
+
+            // Get selected delivery hour (24-hour integer)
+            const selectedDeliveryHour = parseInt(deliveryTimeSelect.value);
+            // Get selected delivery minute (integer)
+            const selectedDeliveryMinute = parseInt(deliveryMinuteSelect.value);
+
+            // Basic validation
+            if (selectedInterests.length === 0 || isNaN(selectedDeliveryHour) || isNaN(selectedDeliveryMinute)) {
+                 throw new Error("Please select at least one interest, a delivery hour, and a delivery minute.");
+            }
+
+            if (!currentUserId) {
+                throw new Error("User ID is missing. Cannot save preferences.");
+            }
+
+            const userDocRef = db.collection('users').doc(currentUserId);
+            await userDocRef.set({
+                // Explicitly save the email from the logged-in user
+                email: loggedInUserEmail, 
+                interests: selectedInterests,
+                deliveryHour: selectedDeliveryHour,
+                deliveryMinute: selectedDeliveryMinute,
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp() // Firestore timestamp
+            }, { merge: true }); // Use merge: true to avoid overwriting other user data in the document
+
+            showMessage('Preferences saved successfully!', 'text-green-600');
+
+        } catch (error) {
+            console.error("Error saving preferences:", error);
+            showMessage(`Error saving preferences: ${error.message}`, 'text-red-600');
+        } finally {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Save Preferences';
+        }
+    }
+
+    // --- Display Status Message ---
+    let messageTimeout;
+    function showMessage(message, className) {
+        statusMessage.textContent = message;
+        statusMessage.className = `text-sm ml-4 ${className}`; // Apply styling
+        clearTimeout(messageTimeout); // Clear any previous timeout
+        messageTimeout = setTimeout(() => {
+            statusMessage.textContent = '';
+            statusMessage.className = 'text-sm ml-4'; // Clear message after 5 seconds
+        }, 5000);
+    }
+
+    // --- Event Listeners ---
+    // Handle form submission to save preferences
+    preferencesForm.addEventListener('submit', (e) => {
+        e.preventDefault(); // Prevent default browser form submission
+        saveUserPreferences();
+    });
+
+    // Handle logout
+    logoutButton.addEventListener('click', async () => {
+        try {
+            await auth.signOut();
+            // onAuthStateChanged will handle the redirect to login.html
+        } catch (error) {
+            console.error("Logout Error:", error);
+            showMessage(`Logout failed: ${error.message}`, true);
+        }
+    });
+
+    // --- Firebase Authentication State Listener ---
+    // This function runs whenever the user's authentication state changes (logged in/out)
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            // User is signed in.
+            currentUserId = user.uid; // Get the unique user ID
+            userEmailSpan.textContent = user.email; // Display user's email in the UI
+            userInfoDisplay.classList.remove('hidden'); // Show user info div
+
+            // First, populate the form options (interests and time slots)
+            populateFormOptions();
+
+            // Then, attempt to load any existing preferences for this user
+            await loadUserPreferences(currentUserId);
+
+        } else {
+            // User is signed out or not authenticated. Redirect to login page.
+            console.log("No user logged in. Redirecting to login page.");
+            window.location.href = 'login.html';
+        }
+    });
+
+    // Initial setup for delivery time and interests (will be overridden by loaded preferences)
+    document.addEventListener('DOMContentLoaded', () => {
+        populateFormOptions(); // Populate dropdowns and checkboxes with defaults
+    });
+</script>
+</body>
+</html>
