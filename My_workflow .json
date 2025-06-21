@@ -1,0 +1,367 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1ce3f3b2-8e81-4bef-871e-b6d0fe9c9e55",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "getAll",
+        "projectId": "chronos-news-agent",
+        "collection": "users",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        0
+      ],
+      "id": "424e39ab-bb78-49a9-9b63-84a3e9da120f",
+      "name": "Google Cloud Firestore",
+      "credentials": {
+        "googleApi": {
+          "id": "XrO67YeuI1Z2dlrP",
+          "name": "Google Firebase Cloud Firestore account 2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me",
+      "typeVersion": 1,
+      "position": [
+        800,
+        40
+      ],
+      "id": "7949f320-4c6d-4288-9a9d-5536e88ebcad"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        0
+      ],
+      "id": "be342d15-4514-4b0f-a8c8-357c59a529d0",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "url": "=https://newsapi.org/v2/everything?q={{ $json.interests.map(i => '\\\"' + i + '\\\"').join('OR') }}&apiKey=8c823d7287894c09adb4a188ccb40ffa",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "sortBy",
+              "value": "publishedAt"
+            },
+            {
+              "name": "pageSize",
+              "value": "10"
+            },
+            {
+              "name": "from",
+              "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }}"
+            },
+            {
+              "name": "to",
+              "value": "={{ new Date().toISOString().split('T')[0] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        -140
+      ],
+      "id": "4fdb337b-2168-401d-94a9-e37af46c2cab",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "352a4aaa-722b-46e3-8def-f8a58d68dc65",
+              "leftValue": "={{$now.format('H')}}",
+              "rightValue": "={{$json.deliveryHour}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "6750cd48-fbc1-4bd8-b92d-3d7bd2a4e8f0",
+              "leftValue": "={{$now.format('m')}}",
+              "rightValue": "={{$json.deliveryMinute}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        -120
+      ],
+      "id": "bd20881e-d050-4e38-ab11-fafa0f7fe628",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "// This Code node expects input where:\n// - $json.interests contains the user's selected interests (from Firestore via Loop Over Items)\n// - The previous node (HTTP Request for News API) should be configured with 'Output Data: All Data'\n//   so its output (including articles) is available on $input.first().json\n\n// CORRECTED: Access user interests from the current item's JSON data\nconst userInterests = ''; \n\n// Accessing articles from the previous HTTP Request node's output.\n// Ensure your HTTP Request node (News API) is set to 'Output Data: All Data'\n// The path here assumes articles are directly under the 'json' property of the HTTP Request's output item.\n// If your News API output is nested differently (e.g., $input.first().json.data.articles),\n// adjust this line accordingly after inspecting the 'Input' tab of this Code node during a test run.\nconst newsArticles = $input.first().json.articles; \n\nif (!newsArticles || !Array.isArray(newsArticles) || newsArticles.length === 0) {\n    console.warn(\"No articles found or articles array is empty for this item. Skipping Gemini processing.\");\n    // If no articles, return an empty array or a specific message to handle downstream\n    return []; \n}\n\nconst numberOfArticlesToSend = 7; // You can adjust this number\nconst relevantArticles = newsArticles.slice(0, numberOfArticlesToSend);\n\n// Prepare the raw article text for Gemini.\n// The prompt will then instruct Gemini on how to summarize and format this.\nlet articlesText = relevantArticles.map(article => {\n    // Directly use properties, falling back to defaults if undefined\n    const title = article.title || 'No Title';\n    const sourceName = article.source?.name || 'Unknown Source';\n    const description = article.description || 'No Description Available.';\n    const url = article.url || '#';\n\n    return `Title: ${title}\\n` +\n           `Source: ${sourceName}\\n` +\n           `Description: ${description}\\n` +\n           `URL: ${url}\\n`;\n}).join('\\n---\\n'); // Use '---' to separate articles clearly for Gemini\n\n// Determine the interests string for the prompt\nconst interestsString = (userInterests && Array.isArray(userInterests) && userInterests.length > 0)\n    ? `relevant to the user's specified interests: ${userInterests.join(', ')}`\n    : 'general and important for the user'; // Fallback if interests are empty or missing\n\n// Construct the prompt for Gemini, including detailed formatting instructions\nconst prompt = `You are a professional news summarizer for an email newsletter.\nSummarize the following news articles into concise, engaging, and relevant bullet points.\nEach summary should be short, highlight the main point, and be suitable for quick reading in an email.\n\n**Instructions for Formatting (using Markdown):**\n1.  Start each article's summary with a bullet point character (\\`* \\`).\n2.  Bold the title of the article using double asterisks (e.g., \\`**Article Title**\\`).\n3.  Follow the bolded title immediately with a concise summary of the article.\n4.  Include the original URL for each article on a new, separate line, explicitly starting with \"URL: \" (e.g., \\`URL: https://example.com/article\\`).\n5.  Separate each complete article summary (including its URL) with a dashed line (\\`---\\`) on its own separate line.\n\nMake sure the summary is ${interestsString}.\n\nDo not include any conversational preamble or concluding remarks, just the summarized news directly.\nFollow all formatting instructions precisely to ensure clean output for HTML conversion.\n\nNews Articles to Summarize:\n---\n${articlesText}\n---`;\n\n// Output the prompt in the format expected by the Gemini API.\nreturn [{\n    json: {\n        prompt: prompt\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        -140
+      ],
+      "id": "00b861ac-b8f8-47cd-a010-3c56f34820d5",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        1360,
+        -120
+      ],
+      "id": "6d725f2b-0699-48c0-b3e7-a27a0e430311",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        100
+      ],
+      "id": "ccf8eeb6-371f-4764-aed2-fbf4d4cc40c6",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "q2UneEyCYxKxOwwI",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "=choudharysarthak.6@gmail.com",
+        "subject": "Chronos News",
+        "message": "={{ $json.htmlContent }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1940,
+        -120
+      ],
+      "id": "8bc0c3ee-20e0-40b7-898d-b5bb738efec4",
+      "name": "Gmail",
+      "webhookId": "88f6add2-c48c-4a26-98fa-f553548d6f78",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "jGFwfUL70VQiH45U",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const markdownText =$input.first().json.text ;\n\n// We'll parse the Markdown into HTML structure\nlet htmlOutput = '';\n\n// Split the entire text into individual article summaries based on the '---' separator\nconst articles = markdownText.split('\\n---\\n').filter(s => s.trim() !== '');\n\narticles.forEach(articleMarkdown => {\n    let lines = articleMarkdown.split('\\n').map(line => line.trim()).filter(line => line !== '');\n// Skip empty sections\n\n    let processedContentForArticle = '';\n    let url = '';\n\n    // Process the first line which contains the bullet, bold title, and summary\n    if (lines[0].startsWith('* ')) {\n        // Remove the initial bullet point\n        let currentLine = lines[0].substring(2).trim();\n\n        // Convert **bold** to <b>bold</b> within this line\n        processedContentForArticle = currentLine.replace(/\\*\\*(.*?)\\*\\*/g, '<b>$1</b>');\n    } else {\n        // Fallback if the line doesn't start with a bullet as expected\n        processedContentForArticle = lines[0];\n    }\n\n    // Find the URL line (assuming it starts with \"URL: \" and is on a separate line)\n    let urlLineIndex = lines.findIndex(line => line.startsWith('URL: '));\n    if (urlLineIndex !== -1) {\n        url = lines[urlLineIndex].substring('URL: '.length).trim(); // Extract the URL\n    }\n\n    // Construct the HTML for this single article list item\n    htmlOutput += `\n        <li style=\"margin-bottom: 15px; background-color: #f9f9f9; padding: 10px; border-radius: 5px;\">\n            ${processedContentForArticle}`; // This variable now correctly holds the <b> tags\n    if (url) {\n        htmlOutput += `<br><a href=\"${url}\" style=\"color: #007bff; text-decoration: none; word-break: break-all;\">${url}</a>`;\n    }\n    htmlOutput += `</li>\\n`;\n});\n\n// Construct the full HTML email body, including the main container and styling\nconst emailHtml = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Your Daily News Digest</title>\n<style>\nbody { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\"; line-height: 1.6; color: #333; margin: 0; padding: 20px; background-color: #f4f4f4; }\n.container { max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }\nh3 { color: #0056b3; margin-top: 0; }\nul { list-style-type: none; padding: 0; margin-left: 0; }\nli b { color: #0056b3; font-weight: bold; } /* This CSS ensures bold text has a nice blue color */\na { color: #007bff; text-decoration: none; word-break: break-all; }\na:hover { text-decoration: underline; }\nhr { border: none; border-top: 1px solid #eee; margin: 25px 0; }\np { margin-bottom: 1em; }\n.footer { font-size: 0.8em; color: #777; text-align: center; margin-top: 30px; }\n</style>\n</head>\n<body>\n<div class=\"container\">\n    <h3>Your Daily News Digest</h3>\n    <p>Hello there,</p>\n    <p>Here's your fresh batch of top news updates for today, ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}:</p>\n    <p>We've curated and summarized the most important stories to keep you informed at a glance.</p>\n    \n    <ul>\n    ${htmlOutput}\n    </ul>\n    \n    <hr>\n    \n    <p style=\"margin-top: 30px;\">We hope this digest keeps you up-to-date!</p>\n    <p>Best regards,<br>The Chronos News Agent Team</p>\n    \n    <div class=\"footer\">\n        <p>You can manage your preferences or unsubscribe at <a href=\"[Your Website Link Here]\" style=\"color: #007bff;\">Your Website Link Here</a></p>\n    </div>\n</div>\n</body>\n</html>`;\n\nreturn [{\n    json: {\n        htmlContent: emailHtml\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1720,
+        -120
+      ],
+      "id": "264c740f-89a2-4805-b7f8-c6a44f6971dd",
+      "name": "Code1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google Cloud Firestore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Cloud Firestore": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Replace Me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c19a4722-03c0-43de-8a15-c6dee4d8e6cb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "33e8623d4862eb9423c156f7a12586e9ff018d1ec34c31ffb82b6fb943f1b9c1"
+  },
+  "id": "8Sk0VHWSyg0R49QP",
+  "tags": []
+}
